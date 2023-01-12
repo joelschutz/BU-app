@@ -1,28 +1,157 @@
 <html>
 <head>
-    <title>Html-Qrcode Demo</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Html-Qrcode Demo</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-iYQeCzEYFbKjA/T2uDLTpkwGzCiq6soy8tYaI1GyVh/UjpbCx/TYkiZhlZB6+fzT" crossorigin="anonymous">
+</head>
 <body>
+  <div id="liveAlertPlaceholder"></div>
     <div id="qr-reader" style="width:500px"></div>
     <div id="qr-reader-results"></div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.1/dist/js/bootstrap.bundle.min.js" integrity="sha384-u1OknCvxWvY5kfmNBILK2hRnQC3Pr17a+RTT6rIHI7NnikvbZlHgTPOOmMi466C8" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="./pocketbase"></script>
+    <script>
+      const client = new PocketBase(document.documentURI.replace("/scan", ""))
+      const alertPlaceholder = document.getElementById('liveAlertPlaceholder')
+
+      console.log(client.authStore)
+
+      const alert = (message, type) => {
+        const wrapper = document.createElement('div')
+        wrapper.innerHTML = [
+          `<div class="alert alert-${type} alert-dismissible" role="alert">`,
+          `   <div>${message}</div>`,
+          '   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>',
+          '</div>'
+        ].join('')
+
+        alertPlaceholder.append(wrapper)
+      }
+      
+
+      const alertTrigger = document.getElementById('liveAlertBtn')
+      if (alertTrigger) {
+        alertTrigger.addEventListener('click', () => {
+          alert('Nice, you triggered this alert message!', 'success')
+        })
+      }
+
+      function parseBU(rawPayload) {
+        const items = rawPayload.split(" ")
+        var bu = {}
+        var cargoBuffer = {}
+        var inCargo = false
+        items.forEach(item => {
+          var [ key, value, ...extra] = item.split(":")
+          if (extra != [] && key == "QRBU") {
+            value += ":" + extra[0]
+          } else if ([
+            "VRQR",
+            "VRCH",
+            "ORIG",
+            "ORLC",
+            "PROC",
+            "DTPL",
+            "PLEI",
+            "TURN",
+            "FASE",
+            "UNFE",
+            "MUNI",
+            "ZONA",
+            "SECA",
+            "AGRE",
+            "IDUE",
+            "IDCA",
+            "VERS",
+            "LOCA",
+            "APTO",
+            "COMP",
+            "FALT",
+            "HBMA",
+            "DTAB",
+            "HRAB",
+            "DTFC",
+            "HRFC",
+            "JUNT",
+            "TURM",
+            "DTRM",
+            "HREM",
+            "IDEL",
+            "MAJO",
+            "PROP",
+            "HASH",
+            "ASSI"
+          ].includes(key)) {
+            bu[key] = value
+          } else if (key == "CARG" && value == 1) {
+            inCargo = true
+            cargoBuffer[key] = value
+
+          } else if (inCargo){
+            cargoBuffer[key] = value
+            if (key == "TOTC") {
+            inCargo = false
+            bu["CARG" + cargoBuffer["CARG"]] = {...cargoBuffer}
+            cargoBuffer = {}
+            }
+          }
+        });
+        console.log(bu)
+        return bu
+      }
+
+      async function  onScanSuccess(decodedText, decodedResult) {
+        const data = {
+          raw_data:decodedText,
+          raw_json:{},
+          zona:"",
+          secao:"",
+          muni:"",
+          uf:"",
+          r22:0,
+          r12:0,
+          r13:0,
+          r15:0
+        };
+        alert(decodedText[5] + " de " + decodedText[7], 'success')
+        const bu = parseBU(decodedText)
+        data.raw_json = bu
+        data.secao = bu["SECA"]
+        data.zona = bu["ZONA"]
+        data.muni = bu["MUNI"]
+        data.uf = bu["UNFE"]
+        data.r22 = parseInt(bu["CARG1"]["22"]) || -1
+        data.r12 = parseInt(bu["CARG1"]["12"]) || -1
+        data.r13 = parseInt(bu["CARG1"]["13"]) || -1
+        data.r15 = parseInt(bu["CARG1"]["15"]) || -1
+        try {
+          const record = await client.records.create('bu', data);
+          alert(record, 'success')
+        } catch (error) {
+          alert(
+            error.status + "\n" +
+            error.url + "\n" +
+            JSON.stringify(error.data), 'danger')
+          
+        }
+
+        // console.log(`Code matched = ${decodedText}`, decodedResult);
+        // console.log(record)
+      }
+      
+      function onScanFailure(error) {
+        // handle scan failure, usually better to ignore and keep scanning.
+        // for example:
+        console.warn(`Code scan error = ${error}`);
+      }
+      
+      let html5QrcodeScanner = new Html5QrcodeScanner(
+        "qr-reader",
+        { fps: 10, qrbox: {width: 250, height: 250} },
+        /* verbose= */ false);
+        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+      </script>
 </body>
-<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-<script>
-    function onScanSuccess(decodedText, decodedResult) {
-  // handle the scanned code as you like, for example:
-  console.log(`Code matched = ${decodedText}`, decodedResult);
-}
-
-function onScanFailure(error) {
-  // handle scan failure, usually better to ignore and keep scanning.
-  // for example:
-  console.warn(`Code scan error = ${error}`);
-}
-
-let html5QrcodeScanner = new Html5QrcodeScanner(
-  "qr-reader",
-  { fps: 10, qrbox: {width: 250, height: 250} },
-  /* verbose= */ false);
-html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-</script>
-</head>
 </html>
